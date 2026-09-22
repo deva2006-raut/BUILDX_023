@@ -166,6 +166,11 @@ const assignAllSurgePatients = () => {
   const waiting = state.surge.patients
     .filter(p => p.status === 'WAITING')
     .sort((a, b) => SEVERITY_ORDER[a.severity] - SEVERITY_ORDER[b.severity] || a.goldenHourStart - b.goldenHourStart);
+  if (!waiting.length) return;
+  const receiving = state.hospitals.filter(h => h.status === 'ONLINE' && h.receiving).length;
+  if (!receiving && !state.overflow.active) {
+    notify(`${waiting.length} patient(s) waiting: NO hospital is currently receiving. Reset overflow or run ULTIMATE recovery.`, 'warning');
+  }
   for (const p of waiting) assignSurgePatient(p);
 };
 
@@ -613,6 +618,16 @@ io.on('connection', (socket) => {
     setTimeout(() => {
       addAlert('📡', 'Phase 5: Network restored — syncing offline queue', 'ok');
       restoreNetwork();
+      // Recovery: hospitals come back online after the cascade.
+      for (const h of state.hospitals) {
+        h.status = 'ONLINE';
+        h.receiving = true;
+        h.load = Math.max(50, h.load - 30);
+        h.icu.used = Math.max(0, h.icu.used - 4);
+      }
+      state.overflow = { active: false, overflowedHospitalIds: [], dismissedIds: [], alternatives: [] };
+      assignAllSurgePatients();
+      addAlert('🏥', 'Recovery complete — hospitals back ONLINE and receiving', 'ok');
       state.twist.running = null;
       ultimateRunning = false;
       addAlert('✅', 'ULTIMATE CRISIS sequence complete — system stabilized in realtime mode', 'ok');

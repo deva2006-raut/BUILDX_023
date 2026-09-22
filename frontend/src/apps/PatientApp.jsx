@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import MapComponent from '../components/MapComponent';
 import AICoordinator from '../components/AICoordinator';
+import GoldenHourTimer from '../components/GoldenHourTimer';
 import { AlertCircle, User, Map, Clock, ArrowRight, CheckCircle, Bot } from 'lucide-react';
 
 export default function PatientApp({ user, state, socket }) {
@@ -14,6 +15,8 @@ export default function PatientApp({ user, state, socket }) {
 
   const myEmergency = state.emergencies[state.emergencies.length - 1];
   const myMission = myEmergency ? state.missions.find(m => m.emergencyId === myEmergency.id) : null;
+  const queued = myEmergency && myEmergency.status === 'QUEUED' && !myMission;
+  const ghTimer = myMission && myMission.goldenHourStart ? <GoldenHourTimer start={myMission.goldenHourStart} ms={myMission.goldenHourMs} /> : null;
 
   const startSOS = () => setSosStep(1);
   const cancelSOS = () => setSosStep(0);
@@ -127,8 +130,17 @@ export default function PatientApp({ user, state, socket }) {
                <div className="w-full md:w-1/3 bg-slate-900 border border-slate-800 rounded-xl flex flex-col overflow-hidden">
                  <div className="bg-blue-900/50 p-4 border-b border-blue-800">
                    <h2 className="text-blue-400 font-bold uppercase text-xs">Mission Control</h2>
-                   <div className="text-white text-xl font-black">{myMission ? myMission.status.replace(/_/g, ' ') : 'NO ACTIVE MISSION'}</div>
+                   <div className={`text-xl font-black ${queued ? 'text-yellow-400' : 'text-white'}`}>{queued ? 'IN DISPATCH QUEUE' : myMission ? myMission.status.replace(/_/g, ' ') : 'NO ACTIVE MISSION'}</div>
+                   {ghTimer}
                  </div>
+                 {queued && (
+                   <div className="p-4">
+                     <div className="bg-yellow-900/20 border border-yellow-700 p-4 rounded">
+                       <div className="text-yellow-300 font-bold text-sm mb-1">SOS {myEmergency.id} received</div>
+                       <div className="text-slate-300 text-sm">All ambulances are currently deployed. You are next in line — dispatch resumes automatically the moment a unit becomes available.</div>
+                     </div>
+                   </div>
+                 )}
                  {myMission ? (
                    <div className="p-4 space-y-4 overflow-y-auto">
                       <div className="bg-slate-800 p-4 rounded border border-slate-700">

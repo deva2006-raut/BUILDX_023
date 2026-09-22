@@ -1,7 +1,10 @@
 import React, { useState } from 'react';
 import MapComponent from './MapComponent';
 import AICoordinator from './AICoordinator';
-import { Activity, ShieldAlert, Users, Droplet, Navigation, Crosshair, BarChart, FileText } from 'lucide-react';
+import TwistCenter from './TwistCenter';
+import OfflineBanner from './OfflineBanner';
+import GoldenHourTimer from './GoldenHourTimer';
+import { Activity, ShieldAlert, Users, Droplet, Navigation, Crosshair, BarChart, FileText, Map, Zap } from 'lucide-react';
 
 export default function CommandCenter({ state, socket }) {
   const [activeTab, setActiveTab] = useState('MAP'); // MAP, CRISIS, ANALYTICS, AUDIT
@@ -61,10 +64,25 @@ export default function CommandCenter({ state, socket }) {
              </div>
            </div>
            
-           <div className="pt-4 border-t border-slate-700">
+           <div className="pt-4 border-t border-slate-700 space-y-2">
              <button onClick={()=>socket.emit('hosp_update', { id: selectedHospital.id, icuUsed: selectedHospital.icu.total })} className="w-full bg-red-900/30 hover:bg-red-900/60 border border-red-800 text-red-400 py-3 rounded font-bold text-sm transition">
                SIMULATE ICU FAILURE (CRASH TO 0)
              </button>
+             {selectedHospital.goldenHourStart && (
+               <div className="bg-slate-800 border border-slate-700 rounded p-3">
+                 <GoldenHourTimer start={selectedHospital.goldenHourStart} />
+               </div>
+             )}
+             {state.overflow?.active && (
+               <div className="bg-orange-950/40 border border-orange-800 rounded p-3">
+                 <div className="text-orange-300 text-xs font-bold uppercase mb-1">Overflow Alternatives</div>
+                 {state.overflow.alternatives.map(a => (
+                   <button key={a.id} onClick={()=>socket.emit('twist_overflow_select', { altId: a.id })} className="block w-full text-left text-xs bg-slate-800 hover:border-orange-500 border border-slate-700 rounded px-2 py-1 mb-1 text-slate-200">
+                     {a.name} · {a.dist}km · ETA {a.eta}m · ICU {a.icu.total - a.icu.used} → SELECT
+                   </button>
+                 ))}
+               </div>
+             )}
            </div>
         </div>
       </div>
@@ -73,14 +91,22 @@ export default function CommandCenter({ state, socket }) {
 
   return (
     <div className="flex h-full w-full bg-slate-950">
+      {activeTab !== 'TWISTS' && (
+        <div className="absolute top-0 left-0 right-0 z-[60]">
+          <OfflineBanner blackout={state.blackout} />
+        </div>
+      )}
       
       {/* EOC SIDEBAR */}
       <div className="w-20 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-6 gap-6 z-20">
          <button onClick={()=>setActiveTab('MAP')} className={`p-3 rounded-xl transition ${activeTab==='MAP'?'bg-blue-600 text-white':'text-slate-500 hover:bg-slate-800'}`}><Map/></button>
          <button onClick={()=>setActiveTab('CRISIS')} className={`p-3 rounded-xl transition ${activeTab==='CRISIS'?'bg-red-600 text-white':'text-slate-500 hover:bg-slate-800'}`}><ShieldAlert/></button>
+         <button onClick={()=>setActiveTab('TWISTS')} className={`p-3 rounded-xl transition ${activeTab==='TWISTS'?'bg-orange-600 text-white':'text-orange-400 hover:bg-slate-800'}`}><Zap/></button>
          <button onClick={()=>setActiveTab('ANALYTICS')} className={`p-3 rounded-xl transition ${activeTab==='ANALYTICS'?'bg-purple-600 text-white':'text-slate-500 hover:bg-slate-800'}`}><BarChart/></button>
          <button onClick={()=>setActiveTab('AUDIT')} className={`p-3 rounded-xl transition ${activeTab==='AUDIT'?'bg-slate-600 text-white':'text-slate-500 hover:bg-slate-800'}`}><FileText/></button>
       </div>
+
+      {activeTab === 'TWISTS' && <TwistCenter state={state} socket={socket} />}
 
       {activeTab === 'MAP' && (
         <>
@@ -108,6 +134,18 @@ export default function CommandCenter({ state, socket }) {
 
       {activeTab === 'CRISIS' && (
         <div className="flex-1 overflow-y-auto p-10">
+           {state.alerts?.length > 0 && (
+             <div className="mb-8 max-w-4xl bg-slate-900 border border-slate-800 rounded-xl p-4">
+               <h2 className="text-xs font-bold text-slate-500 uppercase mb-2">🔴 Live Response Feed (realtime)</h2>
+               <div className="space-y-1 max-h-48 overflow-y-auto">
+                 {state.alerts.slice(0, 12).map(a => (
+                   <div key={a.id} className={`text-sm px-3 py-1.5 rounded border ${a.level === 'crit' ? 'bg-red-950/50 border-red-900 text-red-300' : a.level === 'warn' ? 'bg-yellow-950/30 border-yellow-900/60 text-yellow-200' : a.level === 'ok' ? 'bg-green-950/30 border-green-900/60 text-green-300' : 'bg-slate-800/60 border-slate-700 text-slate-300'}`}>
+                     <span className="mr-2">{a.icon}</span>{a.text}<span className="text-[10px] text-slate-500 ml-2">{new Date(a.time).toLocaleTimeString()}</span>
+                   </div>
+                 ))}
+               </div>
+             </div>
+           )}
            <h1 className="text-3xl font-black text-white mb-2 flex items-center gap-2"><ShieldAlert className="text-red-500"/> Crisis Simulator</h1>
            <p className="text-slate-400 mb-10">Trigger macro-level crisis events to test network resilience and dynamic routing.</p>
            
@@ -132,7 +170,18 @@ export default function CommandCenter({ state, socket }) {
       {activeTab === 'ANALYTICS' && (
         <div className="flex-1 overflow-y-auto p-10">
            <h1 className="text-3xl font-black text-white mb-2 flex items-center gap-2"><BarChart className="text-purple-500"/> Network Analytics</h1>
-           <p className="text-slate-400 mb-10">Live simulated platform metrics.</p>
+           <p className="text-slate-400 mb-6">Live simulated platform metrics.</p>
+           {(state.metrics?.goldenHourBreached > 0 || state.blackout?.active || state.overflow?.active || state.surge?.active) && (
+             <div className="mb-6 max-w-5xl bg-red-950/40 border border-red-800 rounded-xl p-4">
+               <h2 className="text-red-400 font-black text-sm uppercase mb-2">⚠ Twist Impact</h2>
+               <div className="grid md:grid-cols-4 gap-3 text-sm">
+                 <div className="bg-slate-900 p-3 rounded border border-slate-800"><div className="text-slate-500 text-xs">Surge patients</div><div className="text-white font-black text-lg">{state.surge?.patients?.length || 0} ({state.metrics?.criticalCount || 0} critical)</div></div>
+                 <div className="bg-slate-900 p-3 rounded border border-slate-800"><div className="text-slate-500 text-xs">Golden Hour breaches</div><div className="text-red-400 font-black text-lg">{state.metrics?.goldenHourBreached || 0}</div></div>
+                 <div className="bg-slate-900 p-3 rounded border border-slate-800"><div className="text-slate-500 text-xs">Blackout sync</div><div className="text-white font-black text-lg">{state.blackout?.active ? 'OFFLINE' : `${state.blackout?.syncedCount || 0} synced`}</div></div>
+                 <div className="bg-slate-900 p-3 rounded border border-slate-800"><div className="text-slate-500 text-xs">Reroutes (overflow)</div><div className="text-orange-400 font-black text-lg">{state.analytics.reroutes}</div></div>
+               </div>
+             </div>
+           )}
            <div className="grid md:grid-cols-3 gap-6 max-w-5xl">
              <div className="bg-slate-900 border border-slate-800 p-6 rounded-xl">
                <div className="text-slate-400 text-sm font-bold uppercase mb-2">Total Emergencies</div>
@@ -174,6 +223,7 @@ export default function CommandCenter({ state, socket }) {
            </div>
         </div>
       )}
+      <div className="absolute bottom-1 right-2 z-[70] text-[9px] text-slate-600 pointer-events-none">Map: © OpenStreetMap · All operational data DEMO/SIMULATED</div>
     </div>
   );
 }

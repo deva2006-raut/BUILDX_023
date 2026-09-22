@@ -1,6 +1,7 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
 import MapComponent from '../components/MapComponent';
+import GoldenHourTimer from '../components/GoldenHourTimer';
 
 export default function AmbulanceApp({ user, state, socket }) {
   const navigate = useNavigate();
@@ -28,6 +29,12 @@ export default function AmbulanceApp({ user, state, socket }) {
             <div className="text-xs text-slate-400 uppercase">Unit Status</div>
             <div className="text-2xl font-bold text-green-400">{amb.status.replace(/_/g, ' ')}</div>
           </div>
+
+          {mission && mission.goldenHourStart && (
+            <div className="bg-slate-800 p-4 rounded border border-yellow-700 mb-6">
+              <GoldenHourTimer start={mission.goldenHourStart} ms={mission.goldenHourMs} />
+            </div>
+          )}
 
           {mission ? (
             <div className="flex-1 flex flex-col">

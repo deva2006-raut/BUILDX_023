@@ -14,12 +14,21 @@ const createIcon = (color, size=16, pulse=false) => {
 const icons = {
   hospital: createIcon('#a855f7'), 
   hospital_highlight: createIcon('#a855f7', 24, true), 
+  hospital_full: createIcon('#7f1d1d'),
   ambulance: createIcon('#3b82f6'),
+  ambulance_busy: createIcon('#1e40af'),
   emergency: createIcon('#ef4444', 18, true),
   selected: createIcon('#eab308'),
   bloodBank: createIcon('#f43f5e'),
-  bloodBank_highlight: createIcon('#f43f5e', 24, true)
+  bloodBank_highlight: createIcon('#f43f5e', 24, true),
+  alt_facility: createIcon('#f97316', 14),
+  surge_red: createIcon('#dc2626', 20, true),
+  surge_orange: createIcon('#f97316', 16, true),
+  surge_yellow: createIcon('#eab308', 14),
+  surge_green: createIcon('#22c55e', 12)
 };
+
+const surgeIcon = (code, breached) => breached ? icons.surge_red : ({ RED: icons.surge_red, ORANGE: icons.surge_orange, YELLOW: icons.surge_yellow, GREEN: icons.surge_green }[code] || icons.surge_green);
 
 function ClickHandler({ onMapClick }) {
   useMapEvents({ click(e) { onMapClick(e.latlng); } });
@@ -27,7 +36,9 @@ function ClickHandler({ onMapClick }) {
 }
 
 export default function MapComponent({ state, onMapClick, selectedLocation, highlights = { hospitals: [], bloodBanks: [] }, onHospitalClick }) {
-  const { hospitals, ambulances, emergencies, missions, bloodBanks } = state;
+  const { hospitals = [], ambulances = [], emergencies = [], missions = [], bloodBanks = [] } = state;
+  const surgePatients = state.surge?.patients || [];
+  const altFacilities = state.overflow?.alternatives || [];
   const nagpurCenter = [21.1458, 79.0882]; 
 
   return (
@@ -88,9 +99,23 @@ export default function MapComponent({ state, onMapClick, selectedLocation, high
           </Marker>
         )}
 
+        {/* Surge patients (twist 1) */}
+        {surgePatients.filter(p => p.status !== 'DELIVERED').map(p => (
+          <Marker key={p.tempId} position={[p.lat, p.lng]} icon={surgeIcon(p.triageCode, Date.now() - p.goldenHourStart > p.goldenHourMs)}>
+            <Tooltip direction="top" offset={[0, -8]}>{p.triageCode} {p.tempId} · {p.injury}{p.bloodNeeded ? ` · ${p.bloodNeeded}` : ''}</Tooltip>
+          </Marker>
+        ))}
+
+        {/* Alternative facilities (twist 3) */}
+        {altFacilities.map(a => (
+          <Marker key={a.id} position={[a.lat, a.lng]} icon={icons.alt_facility}>
+            <Tooltip direction="top" offset={[0, -8]}>{a.name} · DEMO · ETA {a.eta}m</Tooltip>
+          </Marker>
+        ))}
+
         {/* Mission Routes */}
         {missions.filter(m => m.status !== 'COMPLETED').map(m => (
-          <Polyline key={m.id} positions={m.route} color="#3b82f6" weight={4} opacity={0.8} dashArray="10, 10" />
+          <Polyline key={m.id} positions={m.route} color={m.severity === 'CRITICAL' ? '#ef4444' : '#3b82f6'} weight={m.severity === 'CRITICAL' ? 5 : 4} opacity={0.8} dashArray="10, 10" />
         ))}
       </MapContainer>
     </>

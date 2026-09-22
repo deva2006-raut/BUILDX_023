@@ -4,6 +4,53 @@
 function processAIPrompt(prompt, state, context = {}) {
   const p = prompt.toLowerCase().trim();
 
+  // --- Twist-aware priority responses (read live scenario state) ---
+  const surgeActive = state.surge && state.surge.active;
+  const blackoutActive = state.blackout && state.blackout.active;
+  const overflowActive = state.overflow && state.overflow.active;
+  const ghActive = state.goldenHour && state.goldenHour.active;
+
+  if (p.includes('hundreds') || p.includes('mass casualty') || p.includes('surge') || p.includes('pile-up') || p.includes('pileup')) {
+    const m = state.metrics || {};
+    return {
+      text: surgeActive
+        ? `Mass Casualty Mode is active. ${m.criticalCount || 0} critical patients are being prioritized; ${m.ambulancesAvailable || 0} ambulance(s) available and resources distributed across ${m.hospitalsAvailable || 0} receiving hospitals. ${m.unallocatedCount || 0} patient(s) awaiting allocation.`
+        : 'No surge running. Trigger SIMULATE HIGHWAY MASS CASUALTY in the Crisis Simulator to begin triage-driven allocation.',
+      action: surgeActive ? 'HIGHLIGHT_HOSPITALS' : null,
+      payload: surgeActive ? state.hospitals.filter(h => h.receiving).map(h => h.id) : null,
+    };
+  }
+  if (p.includes('network') && (p.includes('down') || p.includes('offline')) || p.includes('blackout')) {
+    return {
+      text: blackoutActive
+        ? `MEDNEXUS is operating in Offline Mode. Cached emergency resources remain available. ${state.blackout.syncQueue.length} pending action(s) in the sync queue will synchronize when connectivity is restored. DEMO SMS fallback active (simulated).`
+        : 'Network is nominal. Use SIMULATE NETWORK BLACKOUT to rehearse degraded-mode operations.',
+      action: null, payload: null,
+    };
+  }
+  if (p.includes('all hospitals are full') || (p.includes('hospitals') && p.includes('full')) || p.includes('overflow')) {
+    const alts = overflowActive ? state.overflow.alternatives : [];
+    return {
+      text: overflowActive
+        ? `Hospital Overflow Mode is active. I am evaluating ${alts.length} alternative facilities: ${alts.map(a => a.name).join(', ') || 'none remaining'}. Fastest suitable option by ETA with trauma/ICU capability is ranked first.`
+        : 'No hospital is at capacity right now. Trigger SIMULATE HOSPITAL OVERFLOW to test alternative-facility routing.',
+      action: overflowActive ? 'HIGHLIGHT_HOSPITALS' : null,
+      payload: overflowActive ? alts.map(a => a.id) : null,
+    };
+  }
+  if (p.includes('golden hour') || p.includes('running out of time') || p.includes('countdown')) {
+    const patients = (state.surge && state.surge.patients) || [];
+    const worst = patients.filter(x => x.status !== 'DELIVERED')
+      .map(x => ({ x, left: 60 - (Date.now() - x.goldenHourStart) / 60000 }))
+      .sort((a, b) => a.left - b.left)[0];
+    return {
+      text: ghActive
+        ? `Golden Hour priority is active. The system evaluates the fastest SUITABLE ambulance, route and hospital by severity, ETA, trauma/ICU capability and blood availability.${worst ? ` Tightest clock: ${worst.x.tempId} with ${Math.max(0, worst.left).toFixed(0)} min remaining (${worst.x.severity}).` : ''}`
+        : 'Golden Hour Mode is standby. Engage it from the Crisis Simulator to start countdown timers.',
+      action: null, payload: null,
+    };
+  }
+
   if (p.includes('accident') || p.includes('emergency') || p.includes('sos')) {
     const action = context.emergency ? 'CREATE_SOS_AT_CONTEXT' : 'CREATE_SOS';
     return {

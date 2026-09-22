@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
 const cors = require('cors');
+const { processAIPrompt } = require('./aiCoordinator');
 
 const app = express();
 app.use(cors());
@@ -64,6 +65,50 @@ const notify = (msg, type='info', target=null) => {
   io.emit('state_update', state);
 };
 
+// Shared dispatch pipeline: assigns an available ambulance, runs hospital
+// matching, and creates the mission. Used by patient SOS and AI Coordinator.
+const dispatchForEmergency = (socket, payload) => {
+  const emg = {
+    id: 'EMG-' + Math.floor(Math.random()*10000), ...payload, status: 'PENDING',
+    timeline: [{ time: new Date(), event: 'SOS Created via Workflow' }]
+  };
+  state.emergencies.push(emg);
+  state.analytics.totalEmergencies++;
+  logAudit('System', `Emergency ${emg.id} created`, emg.id);
+
+  const amb = state.ambulances.find(a => a.status === 'AVAILABLE');
+  if (amb) {
+    amb.status = 'DISPATCHED';
+    // Match Hospital
+    let cands = state.hospitals.filter(h => h.status === 'ONLINE' && h.receiving).map(h => {
+      let score = 100;
+      const dist = getDistance(payload.lat, payload.lng, h.lat, h.lng);
+      let reasons = [`+ ETA: ${(dist*2.5).toFixed(0)} min`];
+      score -= dist * 2;
+      if(payload.reqAssist === 'Trauma' && !h.trauma) { score -= 100; reasons.push('- No Trauma'); }
+      else if (payload.reqAssist === 'Trauma') { score += 20; reasons.push('+ Trauma Unit'); }
+      if (h.icu.total - h.icu.used <= 0) { score -= 50; reasons.push('- No ICU'); }
+      else { score += 20; reasons.push('+ ICU Available'); }
+      return { ...h, dist: dist.toFixed(1), eta: (dist*2.5).toFixed(0), score, reasons };
+    }).sort((a,b)=>b.score - a.score);
+
+    const mission = {
+      id: 'M-' + Date.now(), emergencyId: emg.id, ambulanceId: amb.id, hospitalId: cands[0]?.id,
+      status: 'EN_ROUTE_TO_PATIENT', route: [[amb.lat, amb.lng], [payload.lat, payload.lng]],
+      match: { selected: cands[0], alts: cands.slice(1) },
+      timeline: [...emg.timeline, { time: new Date(), event: `Ambulance ${amb.name} Assigned` }]
+    };
+    if (cands[0]) mission.route.push([cands[0].lat, cands[0].lng]);
+    state.missions.push(mission);
+    emg.status = 'ASSIGNED';
+
+    logAudit('System', `Mission ${mission.id} dispatched to ${amb.name} for ${cands[0]?.name}`, mission.id);
+    notify(`SOS ${emg.id}: ${amb.name} dispatched. Dest: ${cands[0]?.name}`, 'error');
+  }
+  io.emit('state_update', state);
+  return emg;
+};
+
 app.post('/api/login', (req, res) => {
   const user = state.users.find(u => u.username === req.body.username);
   if(user) {
@@ -76,44 +121,12 @@ io.on('connection', (socket) => {
   socket.emit('state_update', state);
 
   socket.on('create_emergency', (payload) => {
-    const emg = {
-      id: 'EMG-' + Math.floor(Math.random()*10000), ...payload, status: 'PENDING',
-      timeline: [{ time: new Date(), event: 'SOS Created via Workflow' }]
-    };
-    state.emergencies.push(emg);
-    state.analytics.totalEmergencies++;
-    logAudit('System', `Emergency ${emg.id} created`, emg.id);
+    dispatchForEmergency(socket, payload);
+  });
 
-    const amb = state.ambulances.find(a => a.status === 'AVAILABLE');
-    if (amb) {
-      amb.status = 'DISPATCHED';
-      // Match Hospital
-      let cands = state.hospitals.filter(h => h.status === 'ONLINE' && h.receiving).map(h => {
-        let score = 100;
-        const dist = getDistance(payload.lat, payload.lng, h.lat, h.lng);
-        let reasons = [`+ ETA: ${(dist*2.5).toFixed(0)} min`];
-        score -= dist * 2;
-        if(payload.reqAssist === 'Trauma' && !h.trauma) { score -= 100; reasons.push('- No Trauma'); }
-        else if (payload.reqAssist === 'Trauma') { score += 20; reasons.push('+ Trauma Unit'); }
-        if (h.icu.total - h.icu.used <= 0) { score -= 50; reasons.push('- No ICU'); }
-        else { score += 20; reasons.push('+ ICU Available'); }
-        return { ...h, dist: dist.toFixed(1), eta: (dist*2.5).toFixed(0), score, reasons };
-      }).sort((a,b)=>b.score - a.score);
-
-      const mission = {
-        id: 'M-' + Date.now(), emergencyId: emg.id, ambulanceId: amb.id, hospitalId: cands[0]?.id,
-        status: 'EN_ROUTE_TO_PATIENT', route: [[amb.lat, amb.lng], [payload.lat, payload.lng]],
-        match: { selected: cands[0], alts: cands.slice(1) },
-        timeline: [...emg.timeline, { time: new Date(), event: `Ambulance ${amb.name} Assigned` }]
-      };
-      if (cands[0]) mission.route.push([cands[0].lat, cands[0].lng]);
-      state.missions.push(mission);
-      emg.status = 'ASSIGNED';
-      
-      logAudit('System', `Mission ${mission.id} dispatched to ${amb.name} for ${cands[0]?.name}`, mission.id);
-      notify(`SOS ${emg.id}: ${amb.name} dispatched. Dest: ${cands[0]?.name}`, 'error');
-    }
-    io.emit('state_update', state);
+  socket.on('ai_chat', ({ prompt, context } = {}) => {
+    const response = processAIPrompt(prompt, state, context || {});
+    socket.emit('ai_response', response);
   });
 
   socket.on('amb_status', ({ missionId, status }) => {

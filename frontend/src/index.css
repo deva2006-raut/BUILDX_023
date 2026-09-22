@@ -1,0 +1,23 @@
+@import "tailwindcss";
+
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family: 'Inter', system-ui, sans-serif;
+  background-color: #0f172a; /* slate-900 */
+  color: #f8fafc; /* slate-50 */
+}
+
+/* Make leaflet map take full height of its container */
+.leaflet-container {
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  background-color: #0f172a !important;
+}
+
+/* Dark mode map tiles filter */
+.map-tiles-dark {
+  filter: brightness(0.6) invert(1) contrast(3) hue-rotate(200deg) saturate(0.3) brightness(0.7);
+}

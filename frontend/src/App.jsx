@@ -11,7 +11,10 @@ import BloodBankApp from './apps/BloodBankApp';
 
 import 'leaflet/dist/leaflet.css';
 
-const socket = io('http://localhost:4001');
+const BACKEND_URL = import.meta.env.VITE_SOCKET_URL || '';
+// Empty string = same-origin: works locally behind the unified Express server
+// and on the deployed single-domain site.
+const socket = io(BACKEND_URL, { path: '/api/socket.io' });
 
 const HOME_BY_ROLE = {
   PATIENT: '/app/patient',

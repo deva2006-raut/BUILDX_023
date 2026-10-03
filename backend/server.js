@@ -1,5 +1,7 @@
 const express = require('express');
 const http = require('http');
+const path = require('path');
+const fs = require('fs');
 const { Server } = require('socket.io');
 const cors = require('cors');
 const { processAIPrompt } = require('./aiCoordinator');
@@ -12,7 +14,12 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 const server = http.createServer(app);
-const io = new Server(server, { cors: { origin: "*" } });
+const io = new Server(server, {
+  cors: { origin: "*" },
+  // Unified socket path so the same-origin client works both locally and on
+  // the deployed single-domain site (where /api/* hits the backend).
+  path: '/api/socket.io',
+});
 
 const GOLDEN_HOUR_MS = 60 * 60 * 1000;
 
@@ -644,4 +651,22 @@ io.on('connection', (socket) => {
   });
 });
 
-server.listen(4001, () => console.log('Backend on 4001'));
+// Serve the built frontend (single-deploy mode: one Express server for
+// UI + API). On Vercel, static files are served by the CDN and never
+// reach this handler, so this is a no-op there.
+const frontendDist = path.join(__dirname, '../frontend/dist');
+app.use(express.static(frontendDist));
+app.get(/^\/(?!api\/|socket\.io).*/, (req, res, next) => {
+  const indexFile = path.join(frontendDist, 'index.html');
+  if (fs.existsSync(indexFile)) return res.sendFile(indexFile);
+  return next();
+});
+
+const PORT = process.env.PORT || 4001;
+if (require.main === module) {
+  // Standalone mode (local dev / VM). On Vercel the app is loaded from
+  // api/index.js as a serverless handler and never listens here.
+  server.listen(PORT, () => console.log('Backend on ' + PORT));
+}
+
+module.exports = { app, io, server };

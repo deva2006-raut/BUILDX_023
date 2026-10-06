@@ -109,6 +109,10 @@ frontend/
 
 Built by **Team 23** — 2026.
 
+## 🔗 Connect
+
+- [LinkedIn — Devanshu Raut](https://www.linkedin.com/in/devanshu-raut-632167334/)
+
 ## 📄 License
 
 MIT © 2026 Devanshu Raut

@@ -78,6 +78,12 @@ export default function Landing() {
         </section>
 
       </main>
+
+
+      <footer className="border-t border-slate-800 p-4 text-center text-sm text-slate-500">
+        Built by <a href="https://github.com/deva2006-raut" className="text-slate-400 hover:text-white transition">Devanshu Raut</a>
+        · <a href="https://www.linkedin.com/in/devanshu-raut-632167334/" target="_blank" rel="noreferrer" className="text-red-400 hover:text-white transition">LinkedIn</a>
+      </footer>
     </div>
   );
 }
